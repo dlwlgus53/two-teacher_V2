@@ -45,7 +45,7 @@ export PYTHONPATH=.
 
 python learn_teacher_ver.py \
 --seed $1 \
---short 0 \
+--short 1 \
 --valid_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-dev_b.json \
 --labeled_data_path /home/jihyunlee/two-teacher/pptod/data/multiwoz/data/multi-woz-fine-processed/_$2_$1_b.json \
 --test_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-test_b.json \
@@ -53,7 +53,7 @@ python learn_teacher_ver.py \
 --patient 5 \
 --save_prefix seed$1/teacher_ver_$2 \
 --upsamp 1 \
---neg_nums 1
+--neg_nums 3
 
 # --verify_data_path /home/jihyunlee/pptod/data/multiwoz/data/pseudo/seed$1/pseudo.json \
 # 

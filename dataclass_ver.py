@@ -26,19 +26,23 @@ class VerifyData:
         self.data_type = data_type
         self.short = short
 
+        self.neg_nums = neg_nums
+        self.upsamp = upsamp
 
-        dial_id, turn_id, question, answer, belief, pseudo = self.seperate_data(
+
+        dial_id, turn_id, question, answer, belief, pseudo, ans_type = self.seperate_data(
             self.raw_dataset)
-        assert len(question) == len(answer)
-
+        assert len(question) == len(ans_type)
+        
         self.target = answer
         self.turn_id = turn_id
         self.dial_id = dial_id
         self.question = question
         self.belief = belief
         self.pseudo = pseudo
-        self.neg_nums = neg_nums
-        self.upsamp = upsamp
+        self.ans_type = ans_type
+
+
 
     def __len__(self):
         return len(self.question)
@@ -62,7 +66,13 @@ class VerifyData:
                 ans.append(dict_bspn[domain_slot])
         ans = ' '.join(ans)
         return ans
-
+    
+    def make_dial(self, org_dial, new_turn_text):
+        new_dial = org_dial[:org_dial.rfind(cfg.USER_tk)]
+        new_dial += cfg.USER_tk
+        new_dial += new_turn_text
+        return new_dial
+    
     def make_value_dict(self, dataset):
         values = defaultdict(list)
         for dial in dataset:
@@ -89,16 +99,36 @@ class VerifyData:
             pass
         return values
     
-    def make_dial_tuple(self, dataset):
-        dial_tuple =  defaultdict(list)
+    def make_dial_dict(self, dataset):
+        dial_dict =  defaultdict(list)
         for dial in dataset:
-            for t_id, turn in enumerate(dial):
+            for turn in dial:
                 turn_domain = list(set([k.split("-")[0] for k in turn['curr_belief'].keys()]))
                 for dom in turn_domain:
-                    dial_tuple[dom].append((turn['user'].replace("<sos_u>","").replace("<eos_u>","").strip(), turn['belief']))
-        return dial_tuple
+                    dial_dict[dom].append((turn['user'].replace("<sos_u>","").replace("<eos_u>","").strip(), turn['belief']))
+        return dict(dial_dict) 
+    
+    
+    def aug_dial(self, dst, dial_dict, seed, neg_nums):
+        random.seed(seed)
+        def dial_replace(dst, dial_dict):
+            if len(dst)>0:
+                domain = random.choice(list(dst.keys())).split("-")[0]
+            else:
+                domain = 'hotel'
+            random_dial, random_dst = random.choice(dial_dict[domain])
+            cnt = 0
+            while dst == random_dst and cnt<3:
+                random_dial, random_dst = random.choice(dial_dict[domain])
+                cnt +=1
+            return random_dial
+        
+        result = []
+        for _ in range(neg_nums):
+            result.append(dial_replace(dst,dial_dict))
+        return result
 
-    def aug_dst(self, dst, value_dict, dial_dict, seed, neg_nums):
+    def aug_dst(self, dst, value_dict, seed, neg_nums):
         random.seed(seed)
         def add(dst, value_dict):
             try:
@@ -124,52 +154,35 @@ class VerifyData:
             try:
                 slot = random.choice(list(dst.keys()))
                 choices = value_dict[slot].copy()
-                if dst[slot] == '11:30 | 12:30' or dst[slot] == 'cheap|moderate':
-                    pass
-                else:
+                if dst[slot] in choices:
                     choices.remove(dst[slot])
-
-                value = random.choice(choices)
-                dst[slot] = value
+                dst[slot] = random.choice(choices)
+                
             except IndexError as e:
                 dst = None
             except:
                 pdb.set_trace()
             return dst
         
-        def dial_replace(dst, value_dict):
-            try:
-                slot = random.choice(list(dst.keys()))
-                choices = value_dict[slot].copy()
-                if dst[slot] == '11:30 | 12:30' or dst[slot] == 'cheap|moderate':
-                    pass
-                else:
-                    choices.remove(dst[slot])
-
-                value = random.choice(choices)
-                dst[slot] = value
-            except IndexError as e:
-                dst = None
-            except:
-                pdb.set_trace()
-            return  dst
         result = []
-        # loop
-        result = [add(dst.copy(), value_dict), delete(
-            dst.copy()), replace(dst.copy(), value_dict), dial_replace(dst.copy(), dial_dict)] # TODO have to make dial dict
-        result = [i for i in result if i is not None]
+        for _ in range(neg_nums):
+            temp = [(add(dst.copy(), value_dict),"aug_a"), (delete(dst.copy()),"aug_d"), (replace(dst.copy(), value_dict),"aug_r")] 
+            result.extend(temp)
 
+        result = [i for i in result if i[0] is not None]
         return result
 
     def seperate_data(self, dataset):
         # TODO See all the history, Not just current history
         value_dict = self.make_value_dict(dataset)
-        dial_tuple = self.make_dial_tuple(dataset) # [domain :[(dial, belief)]]
+        dial_dict = self.make_dial_dict(dataset) # [domain :[(dial, belief)]]
+        
         question, pseudo = [], []
         answer = []
         dial_id = []
         turn_id = []
         belief = []
+        ans_type = []
         dial_num = 0
         S = 0
         for dial in dataset:
@@ -184,7 +197,7 @@ class VerifyData:
                 raise ValueError
             for t_id, turn in enumerate(dial):
                 turn_text += cfg.USER_tk
-                turn_text += turn['user'].replace("<sos_u>","").replace("<eos_u>","").split()
+                turn_text += turn['user'].replace("<sos_u>","").replace("<eos_u>","").strip()
                 turn['belief'] = self.remove_unuse_domain(turn['belief'])
                 belief_answer = self.make_bspn(turn['belief'])
 
@@ -199,38 +212,70 @@ class VerifyData:
                 dial_id.append(d_id)
                 turn_id.append(t_id)
                 belief.append(b1)
-                pseudo.append(p) 
+                pseudo.append(p)
+                ans_type.append("g") 
 
                 # neg smaple필요한건 training이니까 label type아니면 넘어감. 근데 label type일 땐 neg sample이 필요해
-                
-                if self.data_type != 'label':
-                    for neg_belief in self.aug_dst(turn['belief'], value_dict, dial_tuple, t_id, self.neg_nums): # here neg sampling
-                        wrong_belief_answer = self.make_bspn(neg_belief)
-                        q2 = f"verify the question and answer : context : {turn_text}, Answer : {wrong_belief_answer}"
-                        a2 = 'false'
-                        b2 = neg_belief
+                ###### neg sampling about DST label
+                for neg_belief, ans_type_ in self.aug_dst(turn['belief'], value_dict, t_id, self.neg_nums): # here neg sampling
+                    wrong_belief_answer = self.make_bspn(neg_belief)
+                    q2 = f"verify the question and answer : context : {turn_text}, Answer : {wrong_belief_answer}"
+                    a2 = 'false'
+                    b2 = neg_belief
 
-                        question.append(q2)
-                        answer.append(a2)
+                    question.append(q2)
+                    answer.append(a2)
+                    dial_id.append(d_id)
+                    turn_id.append(t_id)
+                    belief.append(b2)
+                    pseudo.append(p)
+                    ans_type.append(ans_type_)
+                    
+                    # upsampling이 필요하다면..
+                    if self.upsamp:
+                        question.append(q1)
+                        answer.append(a1)
                         dial_id.append(d_id)
                         turn_id.append(t_id)
-                        belief.append(b2)
+                        belief.append(b1)
                         pseudo.append(p)
-                        
-                        # upsampling이 필요하다면..
-                        if self.upsamp:
-                            question.append(q1)
-                            answer.append(a1)
-                            dial_id.append(d_id)
-                            turn_id.append(t_id)
-                            belief.append(b1)
-                            pseudo.append(p)
-                            
-                turn_text += cfg.SYSTEM_tk
-                turn_text += turn['resp'].replace("<sos_r>","").replace("<eos_r>","").split()
+                        ans_type.append("g")
 
+
+                for neg_turn in self.aug_dial(turn['belief'], dial_dict, t_id, self.neg_nums): # here neg sampling
+                    wrong_turn_text = self.make_dial(turn_text, neg_turn)
+                    q3 = f"verify the question and answer : context : {wrong_turn_text}, Answer : {belief_answer}"
+                    a3 = 'false'
+                    b3 = turn['belief']
+
+                    question.append(q3)
+                    answer.append(a3)
+                    dial_id.append(d_id)
+                    turn_id.append(t_id)
+                    belief.append(b3)
+                    pseudo.append(p)
+                    ans_type.append("aug_dial")
+                    
+                    # upsampling이 필요하다면..
+                    if self.upsamp:
+                        question.append(q1)
+                        answer.append(a1)
+                        dial_id.append(d_id)
+                        turn_id.append(t_id)
+                        belief.append(b1)
+                        pseudo.append(p)
+                        ans_type.append("g")
+                        
+                turn_text += cfg.SYSTEM_tk
+                turn_text += turn['resp'].replace("<sos_r>","").replace("<eos_r>","").strip()
         print(f"total dial num is {dial_num}")
-        return dial_id, turn_id, question, answer, belief, pseudo
+        print(f"-- org : {ans_type.count('g')}")
+        print(f"-- aug add : {ans_type.count('aug_a')}")
+        print(f"-- aug replace : {ans_type.count('aug_r')}")
+        print(f"-- aug delete : {ans_type.count('aug_d')}")
+        print(f"-- aug dial : {ans_type.count('aug_dial')}")
+        
+        return dial_id, turn_id, question, answer, belief, pseudo, ans_type
 
     def encode(self, texts, return_tensors="pt"):
         examples = []
@@ -255,7 +300,8 @@ class VerifyData:
         dial_id = self.dial_id[index]
         belief = self.belief[index]
         pseudo = self.pseudo[index]
-        return {"question": question, "target": target, "turn_id": turn_id, "dial_id": dial_id, 'belief': belief, 'pseudo': pseudo}
+        ans_type = self.ans_type[index]
+        return {"question": question, "target": target, "turn_id": turn_id, "dial_id": dial_id, 'belief': belief, 'pseudo': pseudo, 'ans_type' : ans_type}
 
     def collate_fn(self, batch):
         """
@@ -268,41 +314,44 @@ class VerifyData:
         dial_id = [x["dial_id"] for x in batch]
         belief = [x["belief"] for x in batch]
         pseudo = [x["pseudo"] for x in batch]
+        ans_type = [x["ans_type"] for x in batch]
 
         source = self.encode(input_source)
         source = [{k: v.squeeze() for (k, v) in s.items()} for s in source]
         source = self.tokenizer.pad(source, padding=True)
 
         target = self.tokenizer.batch_encode_plus(target, max_length=self.max_length,
-                                                  padding=True, return_tensors='pt', truncation=True)
+                                                padding=True, return_tensors='pt', truncation=True)
 
-        return {"input": source, "label": target, "turn_id": turn_id, "dial_id": dial_id, 'belief': belief, 'pseudo': pseudo}
+        return {"input": source, "label": target, "turn_id": turn_id, "dial_id": dial_id, 'belief': belief, 'pseudo': pseudo, 'ans_type' : ans_type}
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_name', type=str, default='t5-small')
     parser.add_argument('--labeled_data_path', type=str,
-                        default='/home/jihyunlee/pptod/data/multiwoz/data/labeled/0.1/labeled_1.json')
+                        default='/home/jihyunlee/two-teacher/pptod/data/multiwoz/data/multi-woz-fine-processed/_0.1_1_b.json')
     parser.add_argument('--test_data_path', type=str,
                         default='/home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-test.json')
-
     parser.add_argument('--base_trained', type=str,
                         default="t5-small", help=" pretrainned model from 🤗")
-
+    parser.add_argument('--upsamp', type=int, default=0)
+    parser.add_argument('--neg_nums', type=int, default=3)
     # /home/jihyunlee/woz-data/MultiWOZ_2.1/split0.01/labeled.json
     args = parser.parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.base_trained)
 
-    dataset = VerifyData(tokenizer, args.labeled_data_path, 'train', short=1)
+    dataset = VerifyData(tokenizer, args.labeled_data_path,\
+        'train', args.neg_nums, short=1, upsamp=args.upsamp)
 
     data_loader = torch.utils.data.DataLoader(
-        dataset=dataset, batch_size=16, collate_fn=dataset.collate_fn)
+        dataset=dataset, batch_size=16, collate_fn=dataset.collate_fn, shuffle = False)
     t = dataset.tokenizer
     for batch in data_loader:
-        for i in range(3):
-            print(t.decode(batch['input']['input_ids']
-                  [i], skip_special_tokens=True))
+        for i in range(len(batch['input']['input_ids'])):
+            print(t.decode(batch['input']['input_ids'][i],
+                    skip_special_tokens=True))
             print(t.decode(batch['label']['input_ids'][i]))
+            print(f"Type : {batch['ans_type'][i]}")
             print()
-        pdb.set_trace()
+            pdb.set_trace()

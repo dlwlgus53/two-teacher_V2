@@ -131,9 +131,9 @@ if __name__ == "__main__":
     labeled_dataset = VerifyData(tokenizer, args.labeled_data_path,\
                                 'train', args.neg_nums, short=args.short, upsamp=args.upsamp)
     valid_dataset = VerifyData(tokenizer,  args.valid_data_path,
-                               'valid',  short=args.short)
+                            'valid',  short=args.short)
     test_dataset = VerifyData(tokenizer,  args.test_data_path,
-                              'test',  short=args.short)
+                            'test',  short=args.short)
 
     if args.verify_data_path:
         verify_dataset = VerifyData(
@@ -174,9 +174,9 @@ if __name__ == "__main__":
 
     if args.only_labeling == 0:  # have to train
         teacher_trainer.work(train_data=labeled_dataset,
-                             test=True, save=True, train=True)
+                            test=True, save=True, train=True)
         save_test_result(args.test_data_path, teacher_trainer.test_result_dict,
-                         f"model/{args.save_prefix}/test.json")
+                        f"model/{args.save_prefix}/test.json")
 
     print("test end")
 
