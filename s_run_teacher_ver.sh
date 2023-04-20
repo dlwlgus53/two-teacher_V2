@@ -1,6 +1,6 @@
 #!/bin/sh
-#SBATCH -J teacher0.5 # Job name
-#SBATCH -o  ./out/teacher0.5.%j.out   # Name of stdout output file (%j expands to %jobId)
+#SBATCH -J Vt0.5# Job name
+#SBATCH -o  ./out/Vteacher0.5.%j.out   # Name of stdout output file (%j expands to %jobId)
 #SBATCH -p A6000 # queue  name  or  partiton name
 
 #SBATCH -t 72:00:00               # Run time (hh:mm:ss) - 1.5 hours
@@ -37,22 +37,23 @@ source  $HOME/anaconda3/etc/profile.d/conda.sh
 echo "conda activate QA_new "
 conda activate QA_new
 
+
 export PYTHONPATH=.
 
 
 
 
-
 python learn_teacher_ver.py \
---seed 3 \
+--seed $1 \
 --short 0 \
---valid_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-dev.json \
---labeled_data_path /home/jihyunlee/pptod/data/multiwoz/data/labeled/0.1/labeled_$1.json \
---test_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-test.json \
+--valid_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-dev_b.json \
+--labeled_data_path /home/jihyunlee/two-teacher/pptod/data/multiwoz/data/multi-woz-fine-processed/_$2_$1_b.json \
+--test_data_path /home/jihyunlee/pptod/data/multiwoz/data/multi-woz-fine-processed/multiwoz-fine-processed-test_b.json \
 --max_epoch 20 \
 --patient 5 \
---save_prefix ./seed$1/teacher$2 
+--save_prefix seed$1/teacher_ver_$2 \
+--upsamp 1 \
+--neg_nums 1
 
-
-# --verify_data_path /home/jihyunlee/two-teacher/pptod/data/multiwoz/data/amt/change_gen_$2.json \
-
+# --verify_data_path /home/jihyunlee/pptod/data/multiwoz/data/pseudo/seed$1/pseudo.json \
+# 

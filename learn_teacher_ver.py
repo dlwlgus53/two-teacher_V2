@@ -16,7 +16,7 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from trainer import mwozTrainer
 from torch.utils.data import DataLoader
 
-from dataclass_ver_up import VerifyData
+from dataclass_ver import VerifyData
 from utils import filter_data, merge_data, make_label_key
 from evaluate import acc_metric
 
