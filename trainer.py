@@ -34,6 +34,7 @@ class mwozTrainer:
         test_data=None,
         patient=3,
     ):
+        self.train_data = None
         self.log_folder = log_folder
         self.tokenizer = tokenizer
         self.optimizer = optimizer
@@ -87,12 +88,8 @@ class mwozTrainer:
                 )
 
         if test == True:
-            if self.belief_type:
-                gold, pred = self.belief_test()
-            else:
-                gold, pred = self.test()
-
-            test_score = self.evaluate_fnc(gold, pred)
+            gold, pred, type = self.test()
+            test_score = self.evaluate_fnc(gold, pred, type)
             self.logger.info(f"Test score : {test_score}")
             return test_score
 
@@ -218,7 +215,7 @@ class mwozTrainer:
         return loss_sum / iter
 
     def test(self):
-        answer, pred = [], []
+        answer, pred, type = [], [], []
         test_max_iter = int(len(self.test_data) / self.test_batch_size)
         test_loader = torch.utils.data.DataLoader(
             dataset=self.test_data,
@@ -229,7 +226,6 @@ class mwozTrainer:
             lambda: defaultdict(dict)
         )  # dial_id, # turn_id # schema
         self.model.eval()
-        loss_sum = 0
         self.logger.info("Test start")
         with torch.no_grad():
             for iter, batch in enumerate(test_loader):
@@ -245,34 +241,41 @@ class mwozTrainer:
                 label = self.tokenizer.batch_decode(
                     batch["label"]["input_ids"], skip_special_tokens=True
                 )
+                type_ = batch['ans_type']
+                
                 pred.extend(outputs_text)
                 answer.extend(label)
+                type.extend(type_)
 
-                for idx in range(len(outputs_text)):
-                    outputs_text[idx]
-
-                for d_id, t_id, b, a, p in zip(
+                # TODO : why it takes so long?
+                if (iter + 1) % 10 == 0:
+                    self.logger.info(f"Labeling : {iter+1}/{test_max_iter}")
+                    
+                for d_id, t_id, b, a, p, t in zip(
                     batch["dial_id"],
                     batch["turn_id"],
                     batch["belief"],
                     label,
                     outputs_text,
+                    type
                 ):
                     if a == "false":
                         result_dict[d_id][t_id]["neg"] = {
                             "belief": b,
                             "ans": a,
                             "pred": p,
+                            "type": t
                         }
                     else:
                         result_dict[d_id][t_id]["org"] = {
                             "belief": b,
                             "ans": a,
                             "pred": p,
+                            "type": t
                         }
 
         self.test_result_dict = result_dict
-        return answer, pred
+        return answer, pred, type
 
     def string_to_dict(slef, belief_str):
         belief_dict = {}

@@ -15,11 +15,13 @@ import config as cfg
 from utils import make_label_key, dictionary_split
 from collections import defaultdict
 import re
-
-
+from logger_conf import CreateLogger
+import os
 
 class VerifyData:
-    def __init__(self, tokenizer, data_path, data_type, neg_nums=0, short=0, upsamp=False):
+    def __init__(self, tokenizer, data_path, data_type, log_folder, neg_nums=0, short=0, upsamp=False, ):
+        self.logger = CreateLogger(f'data_{data_type}', os.path.join(log_folder, "info.log"))
+        
         self.tokenizer = tokenizer
         self.max_length = tokenizer.model_max_length
         self.raw_dataset = json.load(open(data_path, "r"))
@@ -78,7 +80,7 @@ class VerifyData:
         for dial in dataset:
             for t_id, turn in enumerate(dial):
                 if 'belief' not in turn:
-                    print(f"no belief {turn['dial_id']} {t_id}")
+                    self.logger.info(f"no belief {turn['dial_id']} {t_id}")
                     continue
                 for key_idx, key in enumerate(ontology.all_domain): 
 
@@ -187,13 +189,13 @@ class VerifyData:
         S = 0
         for dial in dataset:
             S += 1
-            if self.short == True and S > 100:
+            if self.short == True and S > 30:
                 break
             turn_text = ""
             dial_num += 1
             d_id = dial[0]['dial_id']
             if 'belief' not in dial[0]:
-                print(f"no belief {d_id}")
+                self.logger.info(f"no belief {d_id}")
                 raise ValueError
             for t_id, turn in enumerate(dial):
                 turn_text += cfg.USER_tk
@@ -268,12 +270,13 @@ class VerifyData:
                         
                 turn_text += cfg.SYSTEM_tk
                 turn_text += turn['resp'].replace("<sos_r>","").replace("<eos_r>","").strip()
-        print(f"total dial num is {dial_num}")
-        print(f"-- org : {ans_type.count('g')}")
-        print(f"-- aug add : {ans_type.count('aug_a')}")
-        print(f"-- aug replace : {ans_type.count('aug_r')}")
-        print(f"-- aug delete : {ans_type.count('aug_d')}")
-        print(f"-- aug dial : {ans_type.count('aug_dial')}")
+        
+        self.logger.info(f"total dial num is {dial_num}")
+        self.logger.info(f"-- org : {ans_type.count('g')}")
+        self.logger.info(f"-- aug add : {ans_type.count('aug_a')}")
+        self.logger.info(f"-- aug replace : {ans_type.count('aug_r')}")
+        self.logger.info(f"-- aug delete : {ans_type.count('aug_d')}")
+        self.logger.info(f"-- aug dial : {ans_type.count('aug_dial')}")
         
         return dial_id, turn_id, question, answer, belief, pseudo, ans_type
 

@@ -96,6 +96,7 @@ def save_test_result(test_dataset_path, test_result_dict, save_path):
     for dial in test_dataset:
         for turn in dial:
             d_id = turn['dial_id']
+            if d_id not in test_result_dict:continue
             t_id = turn['turn_num']
             turn.update(test_result_dict[d_id][t_id])
 
@@ -129,11 +130,11 @@ if __name__ == "__main__":
 
     # Have to train the verify model
     labeled_dataset = VerifyData(tokenizer, args.labeled_data_path,\
-                                'train', args.neg_nums, short=args.short, upsamp=args.upsamp)
+                                'train', log_folder, args.neg_nums, short=args.short, upsamp=args.upsamp)
     valid_dataset = VerifyData(tokenizer,  args.valid_data_path,
-                            'valid',  short=args.short)
+                            'valid',log_folder, neg_nums=1, short=args.short, upsamp=False)
     test_dataset = VerifyData(tokenizer,  args.test_data_path,
-                            'test',  short=args.short)
+                            'test', log_folder, neg_nums=1, short=args.short, upsamp=False)
 
     if args.verify_data_path:
         verify_dataset = VerifyData(
@@ -173,10 +174,14 @@ if __name__ == "__main__":
         **trainer_setting)
 
     if args.only_labeling == 0:  # have to train
-        teacher_trainer.work(train_data=labeled_dataset,
+        test_score = teacher_trainer.work(train_data=labeled_dataset,
                             test=True, save=True, train=True)
         save_test_result(args.test_data_path, teacher_trainer.test_result_dict,
                         f"model/{args.save_prefix}/test.json")
+        
+        with open( f"model/{args.save_prefix}/test_score.json", 'w') as f: 
+            json.dump(test_score, f, ensure_ascii=False, indent=4)
+
 
     print("test end")
 
