@@ -16,7 +16,7 @@ from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from trainer import mwozTrainer
 from torch.utils.data import DataLoader
 
-from dataclass_ver import VerifyData
+
 from utils import filter_data, merge_data, make_label_key
 from evaluate import acc_metric
 
@@ -48,6 +48,7 @@ parser.add_argument('--batch_size_per_gpu', type=int, default=8)
 parser.add_argument('--test_batch_size_per_gpu', type=int, default=16)
 parser.add_argument('--upsamp', type=int, default=1)
 parser.add_argument('--neg_nums', type=int, default=1)
+parser.add_argument('--samp_method', type=str)
 
 
 def init_experiment(seed):
@@ -106,6 +107,13 @@ def save_test_result(test_dataset_path, test_result_dict, save_path):
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    if args.samp_method == 'up':
+        from dataclass_ver import VerifyData
+    elif args.samp_method == 'pos'
+        from dataclass_pos import VerifyData
+    else:
+        raise(f"wrong samp option {args.samp_method}")
+    
     os.makedirs(f"./logs/{args.save_prefix}", exist_ok=True)
     os.makedirs("./out", exist_ok=True)
     os.makedirs("./out", exist_ok=True)
