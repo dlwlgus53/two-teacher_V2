@@ -18,6 +18,7 @@ import re
 from logger_conf import CreateLogger
 import os
 
+num_to_char = {'0' : 'zero', '1' : 'one', '2' : 'two', '3' : 'three', '4' : 'four', '5' : 'five'}
 class VerifyData:
     def __init__(self, tokenizer, data_path, data_type, log_folder, neg_nums=0, short=0, upsamp=False, ):
         self.logger = CreateLogger(f'data_{data_type}', os.path.join(log_folder, "info.log"))
@@ -129,11 +130,9 @@ class VerifyData:
         return result
     
     def pos_aug_dst(self, dst, user, value_dict, seed, neg_nums):
-        # have to chage dst as the dst changed
         random.seed(seed)
         user = user.replace("<sos_u>","").replace("<eos_u>","").strip()
-        
-        def add(dst, value_dict, user): # done this method
+        def add(dst, value_dict, user): 
             try:
                 domain = random.choice(list(dst.keys())).split("-")[0]
                 slot = random.choice([item for item in value_dict.keys(
@@ -141,7 +140,7 @@ class VerifyData:
                 value = random.choice(value_dict[slot])
                 dst[slot] = value
                 inter = random.choice([' is ', ' shoud be ', ' need to be'])
-                add_sentence = ' '.join(slot.split("-")) + inter + value
+                add_sentence = ' '+' '.join(slot.split("-")) + inter + value
                 user += add_sentence
             except IndexError as e:
                 dst = dst
@@ -153,20 +152,28 @@ class VerifyData:
                 choices = value_dict[slot].copy()
                 if dst[slot] in choices:
                     choices.remove(dst[slot])
-                dst[slot] = random.choice(choices)
+                org_value = dst[slot]
+                replace_value = random.choice(choices)
+                
+                org_value_t = num_to_char[org_value] if org_value in num_to_char else org_value
+                replace_value_t = num_to_char[replace_value] if replace_value in num_to_char else replace_value
+
+                if org_value_t in user:
+                    user = user.replace(org_value_t, replace_value_t)
+                    dst[slot] = replace_value
                 
             except IndexError as e:
                 dst = None
             except:
                 pdb.set_trace()
-            return dst
+            return (user,dst)
         
         result = []
         for _ in range(neg_nums):
-            temp = [(add(dst.copy(), value_dict, user),"aug_a"),
-                    (add(dst.copy(), value_dict, user),"aug_a"),
-                    (replace(dst.copy(), value_dict, user),"aug_r"), 
-                    (replace(dst.copy(), value_dict, user),"aug_r")] 
+            temp = [(add(dst.copy(), value_dict, user),"p_aug_a"),
+                    (add(dst.copy(), value_dict, user),"p_aug_a"),
+                    (replace(dst.copy(), value_dict, user),"p_aug_r"), 
+                    (replace(dst.copy(), value_dict, user),"p_aug_r")] 
             result.extend(temp)
         result = [i for i in result if i[0] is not None]
         return result
@@ -294,7 +301,6 @@ class VerifyData:
                     q4 = f"verify the question and answer : context : {pos_turn_text}, Answer : {pos_dst}"
                     a4 = 'true'
                     b4 = pos_dst
-                    pdb.set_trace()
                     question.append(q4) # context 형태 같은지 다른 애들이랑.
                     answer.append(a4)
                     dial_id.append(d_id)
@@ -309,10 +315,13 @@ class VerifyData:
         
         self.logger.info(f"total dial num is {dial_num}")
         self.logger.info(f"-- org : {ans_type.count('g')}")
+        self.logger.info(f"-- positive aug add : {ans_type.count('p_aug_a')}")
+        self.logger.info(f"-- positive aug replace : {ans_type.count('p_aug_r')}")
         self.logger.info(f"-- aug add : {ans_type.count('aug_a')}")
         self.logger.info(f"-- aug replace : {ans_type.count('aug_r')}")
         self.logger.info(f"-- aug delete : {ans_type.count('aug_d')}")
         self.logger.info(f"-- aug dial : {ans_type.count('aug_dial')}")
+
         
         return dial_id, turn_id, question, answer, belief, pseudo, ans_type
 
@@ -374,7 +383,7 @@ if __name__ == '__main__':
                         default='/home/jihyunlee/tod_model/multiwoz/data/multi-woz-fine-processed/_0.1_1_b.json')
     parser.add_argument('--base_trained', type=str,
                         default="t5-small", help=" pretrainned model from 🤗")
-    parser.add_argument('--neg_nums', type=int, default=3)
+    parser.add_argument('--neg_nums', type=int, default=1)
     parser.add_argument('--save_prefix', type=str, default='debugging')
     # /home/jihyunlee/woz-data/MultiWOZ_2.1/split0.01/labeled.json
     args = parser.parse_args()
